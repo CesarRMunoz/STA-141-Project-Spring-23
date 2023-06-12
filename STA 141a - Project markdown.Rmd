@@ -1,0 +1,667 @@
+---
+title: 'STA 141a: Project Report, Spring 2023'
+author: "Cesar Rodriguez-Munoz"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# [Title of project]
+
+```{r setup,include = FALSE}
+# chunk for setup
+
+# setting all chunks to include = FALSE by default
+knitr::opts_chunk$set(echo = FALSE)
+
+# loading libraries
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(viridis)
+library(caTools)
+library(caret)
+library(car)
+library(stargazer)
+
+```
+
+
+
+```{r}
+## List of functions used in project
+
+# Getting average spike for each area
+average_spike_area <- function(i.t, this_session) {
+  spk.trial <- this_session$spks[[i.t]] # get spikes
+  area <- this_session$brain_area # get brain areas
+  spk.count <- apply(spk.trial, 1, sum) # summed spike counts for each brain area in trial
+  spk.average.tapply <- tapply(spk.count, area, mean) # calculate mean for each brain area
+  return(spk.average.tapply)
+}
+
+# Get average_spike_count in a date frame and convert to long format
+# This came up a lot for making graphs so I felt a function would be better
+trial.summary <- function(this_session, reshape = FALSE) { # Assumes false
+  summary_df <- data.frame(this_session$average_spike_count) # put average spike in df
+  
+  if (reshape == TRUE) { # if reshape set TRUE
+    summary_df$feedback_type <- this_session$feedback_type # insert feedback_type
+    summary_df.long <- pivot_longer(summary_df,# reshape data frame
+                                    -feedback_type, 
+                                    names_to = "brain_area", # rename column
+                                    values_to = "avg_spike") # rename column
+    summary_df.long$feedback_type <- factor(summary_df.long$feedback_type, #factor feedback type
+                                            labels = c("Failure", "Success"))
+                                          
+    return(summary_df.long) # return if reshape = TRUE
+  } else {
+    return(summary_df) # return if reshape = FALSE
+  }
+}
+```
+
+
+
+```{r}
+## Loading in Data
+
+# Create list to store sessions
+session <- list()
+
+for (i in 1:18) {
+  # Taking data from .rds and putting it into one data frame
+  session[[i]] <- readRDS(paste('./Data/session', i, '.rds', sep=''))
+  
+  # Getting the number of trials and number of brain areas for the current session
+  n.trial <- length(session[[i]]$feedback_type)
+  n.area <- length(unique(session[[i]]$brain_area))
+
+  # Creating a matrix to store the average spike counts for each trial and area
+  temp.mtrx <- matrix(nrow = n.trial, ncol = n.area)
+
+  # Looping to calculate the average spike counts for each trial and area
+  for (i.t in 1:n.trial) {
+    temp.mtrx[i.t, ] <- c(average_spike_area(i.t, this_session = session[[i]]))
+  }
+
+  # Giving correct names to columns
+  colnames(temp.mtrx) <- c(names(average_spike_area(i.t, this_session = session[[i]])))
+                            
+  # Adding the average spike counts to the corresponding data frame
+  session[[i]]$average_spike_count <- temp.mtrx
+}
+
+```
+
+# Abstract
+
+
+
+# Section 1: Introduction
+
+The goal of this project is to explore the predictive power of a model using neural data in determining mice's outcomes in trials involving expose to visual stimuli. This research serves as a stepping stone towards a broader goal: understanding how organisms process information and make decisions in response to stimuli. Achieving this broader goal would allow us to map out the decision-making processes of a brain, creating the potential to apply this knowledge to the evolving field of artificial intelligence. 
+
+Before continuing, it is important to establish the origin of the data used in this project, as well as providing a brief description of the variables used by the original researchers.
+
+The data for this project was taken from "Distributed coding of choice, action and engagement across the mouse brain" by Steinmetz, N.A., Zatka-Haas, P., Carandini, M., and Harris K.D. Their research focused on how different parts of a mouse's brain are involved in vision, decision-making, and behavior. The research was conducted by exposing mice to visual stimuli on either side of its face, for which the mouse responded by manipulating a wheel controlled by it's fore paws. The mice underwent several trials, where a single trial was considered a discrete instance of visual stimuli presented to the mice and their corresponding response to the stimuli.
+
+The two sources of stimuli are recorded in the variables `contrast_left` and `contrast_right`, indicating the level of stimuli the mouse experienced for each trial. The two variables are recorded on a discrete scale, taking values of 0, 0.25, 0.5, and 1, representing the different levels of visual stimuli intensity. 0 represent no stimuli, and increasing values correspond to greater visual intensity.
+
+The success or failure of a trial depended on the relative magnitudes of the left and right contrasts and the subsequent manipulation of the wheel by the mouse. For instance, Mice succeeded when they moved the wheel in the direction which had the highest contrast (the project description makes it sound like the opposite is true, that the mouse was meant to move the wheel in the opposite direction of higher contrast, but the original paper specifcally says "Mice earned a water reward by turning a wheel with their forepaws to indicate which side had highest contrast"). When both the left and right contrasts were set to 0, indicating the absence of visual stimuli, the mouse succeeded if it did not move the wheel. In cases where the left and right stimuli levels were equal but non-zero, the researchers randomly assigned success to either left or right wheel movement. Lastly, the variable `feedback_type` recorded the mouse's performance in each trial, taking the values of 1 for success and -1 for failure. Rewards or punishments were administered accordingly after each trial.
+
+In addition to tracking the mice's physical responses, the researchers recorded the activity of neurons in the mice's visual cortex during each trial. The recorded measurements include `spks`, which counts the number of neuron spikes in the visual cortex, and `time`, which indicates the discrete time bins in which the spikes occurred during the trial. Specifically, the researchers recored the neural activation in 40 intervals for each trial. The `brain_area` variable specifies the area of the brain where the recorded spikes originated.
+
+It is important to note that the data were organized into 'sessions,' each containing the trials conducted on a single mouse, with the number of trials varying across sessions. In total, this report will focuses on 18 sessions from 4 different mice, out of the 39 trials involving 10 mice examined in the original researchers.
+
+The objective of this report is to analyze the neural spike trains and stimuli contrasts across these 18 sessions. By building a predictive model based on the extracted features from the neural activity and stimuli contrasts, this report aims to classify the feedback types and predict the mice's performance in hypothetical future trials, ultimately providing insights into the learning processes of mice and their decision-making abilities.
+
+To achieve this objective, the project is divided into three interconnected parts: exploratory analysis, data integration, and predictive modeling.
+
+The exploratory analysis will provide insights into the characteristics of the 18 sessions. The analysis will involve describing the data structures across sessions, exploring neural activities during each trial, investigating changes across trials, and examining the homogeneity and heterogeneity across sessions and mice. These analyses will lay the groundwork for subsequent modeling efforts and provide a comprehensive understanding of the data.
+
+The following data integration section aims to combine information across trials, identifying shared patterns across sessions, and developing strategies to address session-specific differences. This integration will contribute to gaining insights into the potential learning occurring in the mice. Leveraging the strengths of data integration will enhance the prediction performance of the model in the subsequent sections.
+
+Finally, the predictive modeling section involves building and training a prediction model that classifies feedback types based on the extracted features from neural activity and stimuli contrasts. The model's performance will be initially trained using random training and test sets selected from Session 2 through 17. Subsequently, the model will be tested on new data from Sessions 1 and 18, which were not included at the start of this report. Evaluating the model's generalization to unseen data will allow us to assess its robustness and reliability. If the mice are indeed learning through expore to additional trials, we expect to observe an increase in their success rate. The report will conclude with a brief statement of the model's performance on the unseen test set and its implications for the hypothesis.
+
+In conclusion, this project investigates the complex relationship between neural activity, stimuli contrasts, and behavioral outcomes. Beyond the academic realm, this project holds implications for one of the most significant advancements in modern history: artificial intelligence.  ChatGPT, as an example, is a highly impactful invention of the 21st century that has triggered a race to develop sophisticated AI systems in hopes of cornering the market. Understanding how real organisms learn and process information can pave the way for recreating such learning capabilities in AI systems, which may someday lead to more "intelligent" and less "artificial" AI.
+
+# Section 2: Exploratory analysis
+
+In this section, we aim to understand the structure of the data across sessions to provide a foundational understanding of the information, guiding us in future sections. Let's start with a basic overview of key data points from each session.
+
+#### **Summary of Sessions: Observing Key Data Points Across Sessions**
+
+```{r,fig.cap="**Table 2.1:** Summary of mice for all sessions."}
+## creating a table for each session
+
+# variable for number of sessions
+n.session <- length(session)
+
+# empty tibble with names for columns and placeholder values
+meta <- tibble(
+  "Session Number" = rep(0,n.session),
+  "Mouse"  = rep('name',n.session),
+  "Date of Experiment" = rep('dt',n.session),
+  "Number of Neurons" = rep(0,n.session),
+  "Number of Trials" = rep(0,n.session),
+  "Success Rate" = rep(0,n.session)
+)
+
+# filling meta data frame with values from sessions
+for(i in 1:n.session){
+  tmp <- session[[i]]
+  meta[i,1] <- i # session number
+  meta[i,2] <- tmp$mouse_name; # mouse name
+  meta[i,3] <- tmp$date_exp; # data of experiment
+  meta[i,4] <- dim(tmp$spks[[1]])[1]; # number of neurons in session
+  meta[i,5] <- length(tmp$feedback_type); # number of trials in session
+  meta[i,6] <- mean(tmp$feedback_type+1)/2; # success rate for session
+  
+}
+
+# printing kable
+kable(meta, format = "html", table.attr = "class='table table-striped'",digits=2) %>%
+  add_header_above(c("Summary of Each Session" = 6))
+
+```
+
+From the table above, we see the four mice we're studying: Cori, Forssmann, Hench, and Lederberg. These mice underwent three, four, four, and seven sessions out of the total of eighteen, respectively. The data collected span approximately one year, from December 2016 to December 2017. Additionally, the table shows the number of neurons recorded in each trial, the total number of trials each mouse underwent, and the success rate of the mice for each session.
+
+In particular, the number of neurons and number of trials are important to note. These figures are significant for different reasons. Firstly, the number of activated neurons might be a strong predictor of the feedback type. It's reasonable to hypothesize that a higher number of activated neurons might increase the chances of successful trials, but this requires further validation. Secondly, the number of trials varies among mice and across sessions. This variability could introduce complexity into our analysis. For instance, mice with more trials may be more likely to succeed simply because they had more opportunities to learn. While this is not immediately clear, we will delve deeper into this issue in the data integration section.
+
+There are other important variables to investigate. Let's look at `contrast_left` and `contrast_right` for each session.
+
+```{r,fig.cap="**Figure 2.1:** This plot displays the total count of different contrast levels for each session. The labels for the contrast levels are as follows: 'No Contrast' = 0, 'Little Contrast' = 0.25, 'Medium Contrast' = 0.5, and 'High Contrast' = 1.",fig.show='hold',fig.align='center'}
+## making a pyramid plot for contrast levels across sessions
+
+# making an empty data frame for contrasts across all sessions
+contrast_all <- data.frame()
+
+# loop over all sessions
+for (i in 1:18) {
+  # making a temporary data frame for each session
+  temp.df <- data.frame(
+    contrast_source = c(rep("Left", length(session[[i]]$contrast_left)), 
+                        rep("Right", length(session[[i]]$contrast_right))),
+    session_id = rep(i, length(session[[i]]$contrast_left) + length(session[[i]]$contrast_right)),
+    contrast_level = c(session[[i]]$contrast_left, session[[i]]$contrast_right)
+  )
+  
+  # factor the contrast values
+  temp.df$factor_contrast <- factor(temp.df$contrast_level, 
+                               levels = c(0, 0.25, 0.5, 1), 
+                               labels = c("No Contrast", "Little Contrast", "Medium Contrast", "High Contrast"))
+  
+  # bind temp.df to contrast_all data frame
+  contrast_all <- bind_rows(contrast_all, temp.df)
+}
+
+# create pyramid plot
+contrast_all %>%
+  mutate(contrast_length = ifelse(contrast_source == "Left", -1, 1)) %>%
+  ggplot(aes(x = session_id, y = contrast_length, fill = contrast_source)) +
+  geom_col() +
+  facet_wrap(~factor_contrast) +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_fill_viridis_d() +
+  labs(x = "Session Number",
+       y = "Total Unique Contrast Levels for Each Session",
+       fill = "Source of Contrast",
+       title = "Source of Contrasts Across All Sessions") +
+  scale_y_continuous(breaks = seq(-200, 200, 100), labels = c("200","100","0","100","200")) +
+  scale_x_continuous(breaks = seq(0,18,3))
+
+```
+
+This plot gives insight into the contrast levels across sessions. The plot is faceted by the level of contrast, with each bar representing a session, and the graph reflects both left and right contrasts. We can observe that the most common contrast level is 0, or no contrast, while fewer contrasts take values of 0.25 and 0.5, for either left or right contrasts. Notably, session 10 stands out with a higher number of high-contrast left stimuli compared to other sessions. The same pattern holds for sessions 15. Both Sessions have a larger number of trials, so their noticeable increase in the contrast levels could be attributed to this fact. This reinforces the fact they we will need to be cognizant of these variability it contrast levels for each trial and the number of trials underwent by each mouse.
+
+To end this portion of the explanatory analysis section, let's view the distribution of feedback types for each of our sessions sessions.
+
+```{r,fig.cap="**Figure 2.2.** This plot represents a simple sum of trial outcomes across sessions. It's important to note that each pair of red and green bars corresponds to a single session.",fig.show='hold',fig.align='center'}
+## creating a bar plot for feedback_type for all sessions.
+
+# create empty data frame
+session.df <- data.frame()
+
+# loop through each session
+for (i in 1:18) {
+  # extract feedback type for current session into temp data frame
+  temp.df <- data.frame(session_id = rep(i, length(session[[i]]$feedback_type)),
+                        feedback_type = session[[i]]$feedback_type)
+  
+  # bind the temp data frame to the session data frame
+  session.df <- rbind(session.df, temp.df)
+}
+
+# factor feedback_type
+session.df$feedback_type <- factor(session.df$feedback_type, levels = c(-1, 1), labels = c("Failure", "Success"))
+
+# bar plot for feedback_type
+ggplot(session.df, aes(x = session_id, fill = feedback_type)) +
+  geom_bar(position = "dodge") +
+  labs(x = "Session Number",
+       y = "Total Trial Outcomes",
+       fill = "Trial Outcome",
+       title = "Total Number of Trial Outcome Across All Sessions") +
+  theme_minimal() +
+  scale_fill_manual(values = c("lightcoral","lightgreen")) +
+  scale_x_continuous(breaks = seq(0,18,3))
+
+```
+
+This plot shows us that the mice were quite adapt in completing their trials. Notably, Lederberg, who is associated with sessions 12 to 18, consistently outperformed his mouse peers in completing trials. This observation aligns with the high success rate we observed in our table. Conversely, both Cori and Forssman, covering sessions one to seven, struggled in successfully completing their trials.
+
+We will combine these pieces of information in the last part of this section which explores homogeneity and heterogeneity.
+
+Given this brief overview of our data across sessions, let's look further into the data, analyzing data across trials. 
+
+#### **Analysis of Neural Activities Across Trials**
+
+Let's begin by plotting the average spike count over the number of trials for these sessions. This will allow us to examine the relationship between the mouse's neural activation and the number of trials for that session.
+
+```{r,out.width="32%", out.height="30%",fig.cap="**Figure 2.3-2.21.**These plots show the mice's average spike count for each trial. The dashed lines represent the average spikes for a single trial, while the solid line represents a smooth line fitted to the average for the corresponding brain area.",fig.show='hold',fig.align='center'}
+## plots of average spike count per trial
+
+# creating an empty data frame for the covariance of brain area and time
+cov_df <- data.frame(Brain_Area = character(), Covariance = numeric(), Session = integer())
+
+for (i.s in 1:18) {
+  # Extract the average spike count data frame from the session
+  temp.df.avg <- trial.summary(session[[i.s]])
+  
+  # Calculate the covariance for each brain area
+  # covariance data frame built in the inner loop
+  cov_values <- sapply(temp.df.avg, function(x) cov(x, seq_len(nrow(temp.df.avg))))
+
+  # Get the number of unique brain areas and number of trials for the current session
+  n.area <- ncol(temp.df.avg)
+  n.trial <- length(temp.df.avg[[1]])
+
+  # Get colors for the plot
+  area.col <- rainbow(n = n.area, alpha = 0.7)
+  
+  # Create a blank plot
+  plot(x = 1, y = 0, col = 'white',
+       xlim = c(0, n.trial),
+       ylim = c(min(temp.df.avg), max(temp.df.avg)), 
+       xlab = "Trials",
+       ylab = "Average spike counts", 
+       main = paste("Spikes Across Trials, Session ", i.s))
+
+  # Loop through each area to plot the data
+  for (i in 1:n.area) {
+    lines(y = temp.df.avg[[i]], x = seq(1, n.trial), col = area.col[i], lty = 2, lwd = 0.5)
+    lines(smooth.spline(seq(1, n.trial), temp.df.avg[[i]]), col = area.col[i], lwd = 4)
+    
+    # calculating covariance for each brain area with time
+    cov_val <- cov(temp.df.avg[[i]], seq_len(n.trial))
+    # adding covariance data to data frame
+    cov_df <- rbind(cov_df, data.frame(Brain_Area = colnames(temp.df.avg)[i], Covariance = cov_val, Session = i.s))
+  }
+
+  # Add legend to the plot
+  legend("topright", 
+         legend = colnames(temp.df.avg)[1:n.area], 
+         col = area.col, 
+         lty = 1, 
+         cex = 0.8,
+         lwd = 5
+  )
+
+}
+```
+
+
+
+```{r,fig.cap="**Figure 2.22:** This plot depicts the covariance of average spikes per trial and the number of trials (time). The specific brain areas are not listed. The graph aims to convey the general negative relationship between average spikes and time, which holds true in our observations.",fig.show='hold',fig.align='center'}
+## Create a grouped bar chart of covariance
+ggplot(cov_df, aes(x = Session, y = Covariance, fill = Covariance > 0)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Session", y = "Covariance", title = "Covariances of Average Spikes and Time") +
+  geom_hline(yintercept = 0, lty = 1, color = "black", lwd = 1) +
+  scale_fill_manual(values = c("red", "green"), guide = "none") +
+  theme_minimal()
+
+```
+
+We observe a decreases in spike counts as the number of trials increases. Visually, we view that in the plots with the downward trend in many of the smooth likes. Additionally, by plotting the covariance of the average spikes with the number of trials for each brain area, we can see that, in most cases, the average number of spikes is negatively correlated with time. There are a few different hypotheses that could explain this. 
+
+One possibility is that the brain adapts to continuous trials, becoming more efficient over time and resulting in lower spike counts. This could indicate the brain's attempt to ration resources, and in turn, necessitating less neural activity to complete the trial.
+
+Alternatively, it could signify decision fatigue, which has been observed in humans who face a series of decisions, leading to reduced cognitive function. The mice could be experiencing something similar, resulting in decreased neural activation with an increasing number of trials.
+
+Another explanation could be that the mice are learning from previous trials, thereby requiring less neural activation to complete the tasks. Like machine learning models that improve efficiency over repeated trials, the mice's neural pathways could be becoming more streamlined, requiring less overall activity and increasing efficiency. This the mouse learning, which is the core question to the project and will be explored further.
+
+These plots are still limited in the fact that we aren't taking into consideration the feedback type of the trials. We need to explore the neural activation of the mice for trials where the mouse succeed and trials where it failed. This will be our next object.
+
+The following plots shed light on the relationship between neural activation for each measured brain area and the outcome of the trial.
+
+```{r, fig.cap="**Figure 2.23-2.40:** These plots illustrate the mice's average spike count for each area of the brain, categorized by feedback type. The red boxes represent failed trials, while the green boxes represent successful trials. Please note, the average is taken over each trial, as each trial consists of 40 time bins recording neural activity. Therefore, each value represents the average for a single trial in the corresponding session.",fig.show='hold',fig.align='center'}
+## making a box plot to see feedback compared to brain area
+
+# make list to hold plots
+plot_list <- list()
+
+# Loop through sessions 4-7
+for (i.s in 1:18) {
+  # Extract the average spike count data frame from the session
+  temp.df <- trial.summary(this_session = session[[i.s]], TRUE)
+
+  # Create the box plot
+  p <- ggplot(temp.df, aes(x = brain_area, y = avg_spike, fill = feedback_type)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(x = "Brain Area", y = "Average Spikes", title = paste0("Session ", i.s)) +
+    scale_fill_manual(values = c( "lightcoral","lightgreen")) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 0.5))
+
+  # Remove x-axis labels unless
+  if (i.s != c(17)) p <- p + theme(axis.title.x = element_blank())
+
+  # Remove y-axis labels unless
+  if (i.s != c(7)) p <- p + theme(axis.title.y = element_blank())
+  
+  # Add plot to list
+  plot_list[[i.s]] <- p
+}
+
+# Generate the grid arrangement with adjusted size
+grid.arrange(
+  grobs = plot_list[1:6],
+  ncol = 3
+)
+
+# Generate the grid arrangement with adjusted size
+grid.arrange(
+  grobs = plot_list[7:12],
+  ncol = 3
+)
+
+# Generate the grid arrangement with adjusted size
+grid.arrange(
+  grobs = plot_list[13:18],
+  ncol = 3
+)
+
+```
+
+Based on the these plots, it is clear that successful trials are associated with a consistently higher average spike count. However, the reasons behind this observation remain uncertain, requiring more investigation in future studies. Interestingly, these findings appear to challenge my previous hypothesis. In the preceding section, I suggested that a decline in brain activity reflects the mice's learning progress over time. Yet, the current plot reveals that successful trials correspond to greater average spike counts. This dissonance between the two observations presents a glaring contradiction. We need additional research to investigate this question.
+
+#### **Combing the Information for Insights to Homogeneity and Heterogeneity**
+
+We have explored a lot of data, and now it is vital to concretely define the insights we have gained from this information. Specifically, we must consider the potential for heterogeneity in our data. Heterogeneity suggests there could be variation in our data that is not explained by the variables we are examining. Heterogeneity suggests the presence of variations in our data that are not accounted for by the variables we are examining. In contrast, homogeneity implies our data exhibits more consistent behavior, allowing us to minimize variations between variables and exclude the influence of external information not accounted for in our model.
+
+With the visualizations we have built and examined so far, we have seen examples of both homogeneity and heterogeneity. Let's discuss examples of both. In the case of homogeneity, we noted a general trend of decreasing average spikes with time and higher average spike counts associated with successful trials, which is a great example of homogeneity. Conversely, the fact that Lederberg consistently out preformed his peers is an example of heterogeneity. While this isn't necessarily an issue, it is important to consider this fact while building our model.
+
+
+# Section 3: Data Integration
+
+My goal in this project is to examine the learning capacity of the mice in this experiment and to determine if their improvement in trials over time could be associated with their learning capacity. To achieve this, I believe analyzing the behavioral data is a crucial approach. There are several reasons behind this, particularly in relation to studying how these behavioral outcomes may relate to developments in AI.
+
+Firstly, the neurological data is specific to mice, with little applicability to other organisms, and focuses solely on the visual cortex. While this information has its value, its direct applicability to AI, particularly in the context of language learning models, may be limited. On the other hand, the behavioral data provides valuable insights into the decision-making process of the mice, which has more direct relevance to AI. Understanding how the mice, and organisms in general, make decisions can ultimately contribute to advancements in AI development. As a result, the behavioral data holds greater significance for addressing my specific research question.
+
+Moreover, attempting to build a model using the neurological data would add a lot of complexity, and, as a result, would be much harder to apply these findings to other areas of research, such as AI development. Studying the behavioral data makes interpreting the model easier, increases applicability to other fields, and allows this research to be more broadly used. It's for these reasons that I will be examining the behavior data of the mice.
+
+To conduct the investigation, I will start with creating a few variables for our model to capture different information. Our first variable of interest will be the categorization of the reward mechanisms administered to the mice. As mentioned briefly in the introduction of this report, the mice received a reward for successfully passing each trial. The exact conditions for receiving this reward were specified earlier. As a quick synopsis, the mice were expected to move the wheel towards greater contrast, not move the wheel for 1.5 seconds with no contrast, and would randomly pass or fail when the contrasts were equal but non zero. Categorizing the left and right contrast levels for each trial will reflect the conditions of rewards for the mice and this information will be captured in our model.
+
+Additionally, I will include a session ID variable. While it is a simple measure, it is still important as this variable will enable the model to capture the effects related to the order of the sessions, leaving open for the potential that mice are improving with each session. Moreover, I will include a variable to identify individual mice, capturing the differences between them.
+
+Another important variable to include is the absolute differences in contrast levels. Referring to the original paper, the researchers noted that the mice struggled more in trials where the contrast levels differed less compared to trials with greater contrast. This information could prove to be vital to predicting the mice's outcome, and is a factor that must be included.
+
+Lastly, I will include the average spike count in each trial. Although this is not strictly behavioral, we observed clear trends in two cases: when the average spikes decreased as trials increased and where successful trials were associated with higher average spike counts. Given the trends, including these variables could be quite beneficial in enhancing the predictive power of the model. It should be noted that previously, we were looking at the average spike count for each area of the brain, but to reduce the size of the model, I will only be using the mean spike count across all areas of the brain.
+
+```{r}
+## creating variables to use the predictive model.
+
+# creating empty data frame for model
+model_df <- data.frame()
+
+# loooooooop
+for(i in 1:18){
+  # absolute contrast difference
+  contrast_diff <- abs(session[[i]]$contrast_left - session[[i]]$contrast_right)
+  
+  # categorizing reward mechanism
+  reward_mechanism <- ifelse(session[[i]]$contrast_left == session[[i]]$contrast_right, 
+                             ifelse(session[[i]]$contrast_left == 0, "0-0", "equal but non-zero"), 
+                             "unequal")
+  
+  # retrieve spike count
+  # taking mean across brain areas to reduce model size
+  average_spike_count <- rowMeans(session[[i]]$average_spike_count)
+  
+  # create temp data frame for the current session
+  temp.df <- data.frame(
+    session_id = rep(i, length(session[[i]]$feedback_type)), 
+    mouse_name = rep(session[[i]]$mouse_name, length(session[[i]]$feedback_type)), 
+    trial_number = 1:length(session[[i]]$feedback_type), 
+    contrast_diff = contrast_diff, 
+    reward_mechanism = reward_mechanism, 
+    average_spike_count = average_spike_count,
+    feedback_type = session[[i]]$feedback_type
+  )
+  
+  # add the session data to the model_df
+  model_df <- rbind(model_df, temp.df)
+  
+}
+
+# important, factor reward_mechanism
+model_df$reward_mechanism <- as.factor(model_df$reward_mechanism)
+
+# Factor feedback_type with labels
+model_df$feedback_type <- factor(model_df$feedback_type,
+                                 levels = c(-1, 1),
+                                 labels = c("Failure", "Success"))
+
+## split data and test
+
+# split data into training and test set
+set.seed(420) # for reproducibility 
+trainIndex <- createDataPartition(model_df$reward_mechanism, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+# make training set and test set
+train_data <- model_df[ trainIndex,] # training
+test_data  <- model_df[-trainIndex,] # test
+
+# train control
+# set to cross-validation, with 10 folds
+train_control <- trainControl(method = "cv", number = 10)
+
+
+# fit full model
+full_model <- glm(feedback_type ~ session_id + mouse_name + trial_number + contrast_diff + reward_mechanism + average_spike_count, 
+                  data = train_data, family = binomial)
+
+
+```
+
+
+# Section 4: Predictive Modeling
+
+Now, we finally arrive at the creation of our model. Creating our model requires some foresight. We need to consider what approach we will ultimately use to find our best model, such as forward selection, backward elimination, forward or backward stepwise selection, and all of these can either be based on AIC and BIC. I am going to use a backward elimination approach based on BIC. I am choosing this because I want to start with a full model. This will allow me to check my assumptions beforehand, and then reduce the model after. If some of my variables don't meet the assumptions of the logit model, then they can be discarded before even having to consider them. I am also choosing to base this approach on BIC, because BIC prefers smaller models, when compared to AIC. A smaller model will be less likely to suffer from over fitting. 
+
+I will be using a logit model to predict the feedback type. I have to acknowledge limitations to this model. The most glaring issue is that the logit model requires the observations to be independent from each other. Unfortunately, this is not the case. Future trials are doing to be dependent on past trials, as the mouse will learn from the past and make new decisions based on past information. My limited knowledge of statistics has stopped me from finding a solution to this issue, but I needed to acknowledge this issue. Nevertheless, I will continue the analysis.
+
+The full model will include all variables created for this analysis. These variables include `Session-id`, `mouse_name`, `trial_number`, `contrast_diff`, `reward_mechanism`, `average_spike_count`, and `feedback_type`. The first step from here should be reducing the size of this model. After performing backward elimination based on BIC, the model did not actually change. Here is a table of the full and reduced model as evidence of their identity.
+
+
+```{r, fig.cap="**Table 4.1:** The table shows the full model and the reduced model. While the information seems redudant, the table is included to show that the full model was not reduded.",fig.show='hold',fig.align='center'}
+
+# backward elimination based on BIC
+reduced_model <- step(full_model, k = log(nrow(train_data)), direction = "backward")
+
+# table of the full and reduced model
+stargazer(full_model, reduced_model, type = "text",
+          title = "Summary of regression models",
+          column.labels = c("Full Model", "Reduced Model"),
+          ci.levels = .95,  # 95% confidence intervals
+          single.row = TRUE  # each predictor on a single row
+          )
+```
+
+The reduced model equation is given by:
+
+$$ \text{Feedback Type} = \beta_0 + \beta_1 \cdot \text{Session ID} + \beta_2 \cdot \text{Mouse Name} + \beta_3 \cdot \text{Trial Number} + \beta_4 \cdot \text{Contrast Diff} + \beta_5 \cdot \text{Reward Mechanism} + \beta_6 \cdot \text{Average Spike Count} $$
+
+
+```{r}
+
+# Get the formula of the reduced model
+reduced_formula <- formula(reduced_model)
+
+# cross-validation, 10 folds
+train_control <- trainControl(method = "cv", number = 10)
+
+# logit regression
+reduced_model_cv <- train(reduced_formula, 
+                          data = train_data, 
+                          trControl = train_control, 
+                          method = "glm", 
+                          family = "binomial")
+
+# test reduced_model on training data
+# use the model to predict on the test data
+test_data$predicted_prob <- predict(reduced_model, newdata = test_data, type = "response")
+
+# class predictions with threshold at 0.5
+threshold <- 0.5
+test_data$predicted_class <- ifelse(test_data$predicted_prob > threshold, "Success", "Failure")
+
+# create confusion matrix
+confusion_matrix <- caret::confusionMatrix(as.factor(test_data$predicted_class), test_data$feedback_type)
+
+# convert your confusion matrix into a data frame for kable
+confusion_matrix_df <- as.data.frame(confusion_matrix$table)
+
+```
+
+```{r, fig.cap="**Table 4.2:** The table shows the classification of successful and failed trials by the model, against the real classification of the data.",fig.show='hold',fig.align='center'}
+
+# make table
+kable(confusion_matrix_df, "html", table.attr = "class='table table-striped'") %>%
+  kable_styling("striped", full_width = F) %>%
+  add_header_above(c("Prediction vs Reference \nClassification" = 3))
+
+```
+
+The table above shows that model rather successfully categorized the data. To calculate the accuracy of the model, we take the sum of true positives and true negatives, and we divide the sum by the total number of classifications. This means the accuracy of the model is about 70.2%.
+
+# Section 5: Prediction Performance on the Test Sets
+
+```{r}
+# read in test 1 and 2
+test1 <- readRDS("./test/test1.rds")
+test2 <- readRDS("./test/test2.rds")
+
+# creating empty data frame for test data
+model_df <- data.frame()
+
+# Getting average spike for each area
+# Calculate average spike count for test1
+n.trial <- length(test1$feedback_type)
+n.area <- length(unique(test1$brain_area))
+temp.mtrx <- matrix(nrow = n.trial, ncol = n.area)
+
+for (i.t in 1:n.trial) {
+  temp.mtrx[i.t, ] <- average_spike_area(i.t, this_session = test1)
+}
+
+colnames(temp.mtrx) <- names(average_spike_area(i.t, this_session = test1))
+test1$average_spike_count <- temp.mtrx
+
+# Calculate average spike count for test2
+n.trial <- length(test2$feedback_type)
+n.area <- length(unique(test2$brain_area))
+temp.mtrx <- matrix(nrow = n.trial, ncol = n.area)
+
+for (i.t in 1:n.trial) {
+  temp.mtrx[i.t, ] <- average_spike_area(i.t, this_session = test2)
+}
+
+colnames(temp.mtrx) <- names(average_spike_area(i.t, this_session = test2))
+test2$average_spike_count <- temp.mtrx
+
+# creating variables for test1
+contrast_diff <- abs(test1$contrast_left - test1$contrast_right)
+reward_mechanism <- ifelse(test1$contrast_left == test1$contrast_right,
+                           ifelse(test1$contrast_left == 0, "0-0", "equal but non-zero"),
+                           "unequal")
+average_spike_count <- rowMeans(test1$average_spike_count)
+temp.df <- data.frame(
+  session_id = rep("test1", length(test1$feedback_type)),
+  mouse_name = rep(test1$mouse_name, length(test1$feedback_type)),
+  trial_number = 1:length(test1$feedback_type),
+  contrast_diff = contrast_diff,
+  reward_mechanism = reward_mechanism,
+  average_spike_count = average_spike_count,
+  feedback_type = test1$feedback_type
+)
+model_df <- rbind(model_df, temp.df)
+
+# creating variables for test2
+contrast_diff <- abs(test2$contrast_left - test2$contrast_right)
+reward_mechanism <- ifelse(test2$contrast_left == test2$contrast_right,
+                           ifelse(test2$contrast_left == 0, "0-0", "equal but non-zero"),
+                           "unequal")
+average_spike_count <- rowMeans(test2$average_spike_count)
+temp.df <- data.frame(
+  session_id = rep("test2", length(test2$feedback_type)),
+  mouse_name = rep(test2$mouse_name, length(test2$feedback_type)),
+  trial_number = 1:length(test2$feedback_type),
+  contrast_diff = contrast_diff,
+  reward_mechanism = reward_mechanism,
+  average_spike_count = average_spike_count,
+  feedback_type = test2$feedback_type
+)
+
+# update model df
+model_df <- rbind(model_df, temp.df)
+
+
+# factor
+model_df$reward_mechanism <- as.factor(model_df$reward_mechanism)
+
+# factor
+model_df$feedback_type <- factor(model_df$feedback_type,
+                                 levels = c(-1, 1),
+                                 labels = c("Failure", "Success"))
+
+# session id as numeric
+# Convert session_id in model_df to numeric 
+model_df$session_id <- as.numeric(sub("test", "", model_df$session_id))
+
+
+
+# apply model to test data
+# Apply the reduced model to the test data
+model_df$predicted_prob <- predict(reduced_model, newdata = model_df, type = "response")
+
+# Classify predictions with a threshold at 0.5
+threshold <- 0.5
+model_df$predicted_class <- ifelse(model_df$predicted_prob > threshold, "Success", "Failure")
+
+# Build a confusion matrix
+confusion_matrix <- caret::confusionMatrix(as.factor(model_df$predicted_class), model_df$feedback_type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+```
+
+We can see that model as an accuracy of 64.5% with a 95% confidence interval. Overall, I am still proud of my model. Some of the assumptions of a logit model did not hold, and in the future or exhaustive efforts should be take to ensure the model meets it's assumptions. Still, with the effort I went throught to build this model, I believe there is much value to be gained, and with more effort over time, real insights could be had from this research. 
+
+## Code Appendix {-}
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```
+
+## Session information {-}
+```{r}
+sessionInfo()
+```
