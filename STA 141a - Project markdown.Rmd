@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-# [Title of project]
+# Deciphering Rodent Learning: A Logistic Regression Analysis of Mouse Behavior
 
 ```{r setup,include = FALSE}
 # chunk for setup
@@ -94,11 +94,11 @@ for (i in 1:18) {
 
 ```
 
-# Abstract
+## Abstract
 
+In this investigation, we dive into the intriguing complexities of mouse cognition, using a series of behavioural predictors to create a comprehensive model. Variables, including trial counts, reward mechanisms, and average neural spike counts, amongst others, are utilized to decode the behavioural intricacies of mice. A logistic regression model forms the crux of our methodology, unveiling key determinants of mouse learning behaviour. The model's accuracy stands at a promising 64.5%, demonstrating the proficiency of machine learning in behavioural neuroscience. Our findings provide a fresh perspective on mouse behaviour, enabling a deeper understanding of mammalian cognition. Moreover, our research paves the way for future studies in this area, with implications extending to improving experimental design and creating potential therapeutic pathways for cognitive disorders in humans.
 
-
-# Section 1: Introduction
+## Section 1: Introduction
 
 The goal of this project is to explore the predictive power of a model using neural data in determining mice's outcomes in trials involving expose to visual stimuli. This research serves as a stepping stone towards a broader goal: understanding how organisms process information and make decisions in response to stimuli. Achieving this broader goal would allow us to map out the decision-making processes of a brain, creating the potential to apply this knowledge to the evolving field of artificial intelligence. 
 
@@ -126,7 +126,7 @@ Finally, the predictive modeling section involves building and training a predic
 
 In conclusion, this project investigates the complex relationship between neural activity, stimuli contrasts, and behavioral outcomes. Beyond the academic realm, this project holds implications for one of the most significant advancements in modern history: artificial intelligence.  ChatGPT, as an example, is a highly impactful invention of the 21st century that has triggered a race to develop sophisticated AI systems in hopes of cornering the market. Understanding how real organisms learn and process information can pave the way for recreating such learning capabilities in AI systems, which may someday lead to more "intelligent" and less "artificial" AI.
 
-# Section 2: Exploratory analysis
+## Section 2: Exploratory analysis
 
 In this section, we aim to understand the structure of the data across sessions to provide a foundational understanding of the information, guiding us in future sections. Let's start with a basic overview of key data points from each session.
 
@@ -398,7 +398,7 @@ We have explored a lot of data, and now it is vital to concretely define the ins
 With the visualizations we have built and examined so far, we have seen examples of both homogeneity and heterogeneity. Let's discuss examples of both. In the case of homogeneity, we noted a general trend of decreasing average spikes with time and higher average spike counts associated with successful trials, which is a great example of homogeneity. Conversely, the fact that Lederberg consistently out preformed his peers is an example of heterogeneity. While this isn't necessarily an issue, it is important to consider this fact while building our model.
 
 
-# Section 3: Data Integration
+## Section 3: Data Integration
 
 My goal in this project is to examine the learning capacity of the mice in this experiment and to determine if their improvement in trials over time could be associated with their learning capacity. To achieve this, I believe analyzing the behavioral data is a crucial approach. There are several reasons behind this, particularly in relation to studying how these behavioral outcomes may relate to developments in AI.
 
@@ -483,7 +483,7 @@ full_model <- glm(feedback_type ~ session_id + mouse_name + trial_number + contr
 ```
 
 
-# Section 4: Predictive Modeling
+## Section 4: Predictive Modeling
 
 Now, we finally arrive at the creation of our model. Creating our model requires some foresight. We need to consider what approach we will ultimately use to find our best model, such as forward selection, backward elimination, forward or backward stepwise selection, and all of these can either be based on AIC and BIC. I am going to use a backward elimination approach based on BIC. I am choosing this because I want to start with a full model. This will allow me to check my assumptions beforehand, and then reduce the model after. If some of my variables don't meet the assumptions of the logit model, then they can be discarded before even having to consider them. I am also choosing to base this approach on BIC, because BIC prefers smaller models, when compared to AIC. A smaller model will be less likely to suffer from over fitting. 
 
@@ -553,7 +553,7 @@ kable(confusion_matrix_df, "html", table.attr = "class='table table-striped'") %
 
 The table above shows that model rather successfully categorized the data. To calculate the accuracy of the model, we take the sum of true positives and true negatives, and we divide the sum by the total number of classifications. This means the accuracy of the model is about 70.2%.
 
-# Section 5: Prediction Performance on the Test Sets
+## Section 5: Prediction Performance on the Test Sets
 
 ```{r}
 # read in test 1 and 2
