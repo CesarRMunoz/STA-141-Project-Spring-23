@@ -7,6 +7,7 @@ This project aims to determine if the mice learned over time. If the model shows
 
 ## Table of Contents
 - [Installation](#installation)
+- [Files Breakdown](#Files Breakdown)
 
 ## Installation
 ### Prerequisites
@@ -15,6 +16,11 @@ This project aims to determine if the mice learned over time. If the model shows
 1. Download the 'STA 141a - Project markdown.RMD' file
 2. Run in R and knit to a markdown.
 3. Alternatively, the 'Completed-Project-markdown-STA-141a.HTML' is the knitted file, and can be viewed after downloading.
+
+## Files Breakdown
+### Completed-Project-markdown-STA-141a.HTML
+### Course_project_description.HTML 
+###
 
 ```
 
