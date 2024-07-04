@@ -19,7 +19,7 @@ This project aims to determine if the mice learned over time. If the model shows
 
 ## Installation
 ### Prerequisites
-- List of prerequisites
+- This project was completed in R version 4.3.0, I am uncertain how this will run on past or future versions of R.
 ### Installation Steps
 1. Step one
 2. Step two
