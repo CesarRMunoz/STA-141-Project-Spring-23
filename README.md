@@ -7,27 +7,14 @@ This project aims to determine if the mice learned over time. If the model shows
 
 ## Table of Contents
 - [Installation](#installation)
-- [Usage](#usage)
-- [Features](#features)
-- [Contributing](#contributing)
-- [License](#license)
-- [Authors and Acknowledgments](#authors-and-acknowledgments)
-- [Contact Information](#contact-information)
-- [FAQ](#faq)
-- [Roadmap](#roadmap)
-- [Changelog](#changelog)
 
 ## Installation
 ### Prerequisites
 - This project was completed in R version 4.3.0, I am uncertain how this will run on past or future versions of R.
 ### Installation Steps
-1. Step one
-2. Step two
-3. Step three
+1. Download the 'STA 141a - Project markdown.RMD' file
+2. Run in R and knit to a markdown.
+3. Alternatively, the 'Completed-Project-markdown-STA-141a.HTML' is the knitted file, and can be viewed after downloading.
 
-## Usage
-### How to Use
-Provide instructions and examples on how to use your project.
-```sh
-# Example command
-some-command
+```
+
